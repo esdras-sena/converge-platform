@@ -92,6 +92,7 @@ jobs:
           sarif_file: semgrep.sarif
           category: semgrep
       - run: node .github/scripts/detect-prompt-injection.js
+      - run: node .github/scripts/run-prompt-security-tests.js
 
   secret-scan:
     name: Secret Detection

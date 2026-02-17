@@ -7,11 +7,12 @@ This workflow is focused on **prompt injection vulnerabilities** and **bug/secur
 1. Dependency scan (`npm audit`)
 2. CodeQL semantic analysis
 3. Semgrep (custom prompt-injection + general security rules)
-4. Secret scanning (TruffleHog + Gitleaks)
-5. Input validation audit script
-6. Lint/syntax checks
-7. Behavior analysis with safe local endpoints
-8. Security summary job
+4. Prompt-security adversarial corpus tests (`run-prompt-security-tests.js`)
+5. Secret scanning (TruffleHog + Gitleaks)
+6. Input validation audit script
+7. Lint/syntax checks
+8. Behavior analysis with safe local endpoints
+9. Security summary job
 
 ## Prompt Injection Coverage
 
