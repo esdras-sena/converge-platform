@@ -234,7 +234,7 @@ const CMD = {
     const { action, auto, dryRun, accountIndex, skipAuth, ...rest } = p;
     if (!action) fail('plan requires "action"');
     const escrow = rest.escrowAddress || ESCROW;
-    if (!escrow && action !== 'register') fail('Missing escrowAddress or ESCROW_ADDRESS');
+    if (!escrow) fail('Missing escrowAddress or ESCROW_ADDRESS');
 
     // Issue attestation token (consumed by typhoon resolve-smart.js)
     const attestToken = issueAttestation();
