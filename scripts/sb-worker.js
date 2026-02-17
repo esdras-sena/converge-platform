@@ -31,7 +31,6 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { DEFAULT_MAX_FEE_PER_DAY_RAW, canSpendMore, recordSpendRaw } from './_budget.js';
 import { getAccountAddress } from './_accounts.js';
-import { shouldOutsource } from './_outsource_policy.js';
 
 const API = process.env.CONVERGE_API_URL || 'http://localhost:3001';
 const DIR = join(homedir(), '.openclaw', 'converge');
