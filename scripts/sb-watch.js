@@ -59,10 +59,10 @@ async function pollJobs(opts) {
   if (opts.token) params.token = opts.token;
 
   // Get ALL jobs to track status changes
-  const listed = await api('/api/jobs', { status: 'listed', limit: 50 });
-  const accepted = await api('/api/jobs', { status: 'accepted', limit: 20 });
-  const submitted = await api('/api/jobs', { status: 'submitted', limit: 20 });
-  const resolved = await api('/api/jobs', { status: 'resolved', limit: 20 });
+  const listed = await api('/api/jobs', { ...params, status: 'listed', limit: 50 });
+  const accepted = await api('/api/jobs', { ...params, status: 'accepted', limit: 20 });
+  const submitted = await api('/api/jobs', { ...params, status: 'submitted', limit: 20 });
+  const resolved = await api('/api/jobs', { ...params, status: 'resolved', limit: 20 });
 
   const allJobs = [
     ...(listed.data || []),
