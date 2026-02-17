@@ -39,7 +39,6 @@ import { homedir } from 'os';
 const API = process.env.CONVERGE_API_URL || 'http://localhost:3001';
 const RPC = process.env.STARKNET_RPC_URL || 'https://rpc.starknet.lava.build:443';
 const ESCROW = process.env.ESCROW_ADDRESS || '';
-const FEE_BPS = 250; // 2.5%
 
 function out(obj) {
   console.log(JSON.stringify(obj, (_k, v) => typeof v === 'bigint' ? v.toString() : v, 2));
