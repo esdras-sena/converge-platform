@@ -73,7 +73,11 @@ function issueAttestation() {
       JSON.stringify({ createdAt: now, expiresAt: now + ATTEST_TTL_MS }),
       'utf8'
     );
-  } catch {}
+  } catch (e) {
+    throw new Error(
+      `issueAttestation failed for token ${token} in ${ATTEST_DIR} during mkdirSync/writeFileSync: ${e?.message || e}`
+    );
+  }
   return token;
 }
 
