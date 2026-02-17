@@ -91,7 +91,19 @@ async function main() {
 
   const maxFeePerDayRaw = cfg.maxFeePerDayRaw || DEFAULT_MAX_FEE_PER_DAY_RAW; // 2 STRK
   const minMarginPct = cfg.minMarginPct ?? 15;
-  const bidDiscountBps = cfg.bidDiscountBps ?? 500;
+  const rawBidDiscountBps = Number(cfg.bidDiscountBps ?? 500);
+  let bidDiscountBps;
+  if (!Number.isFinite(rawBidDiscountBps)) {
+    bidDiscountBps = 500;
+    log(`Invalid bidDiscountBps (${cfg.bidDiscountBps}); defaulting to ${bidDiscountBps}`);
+  } else {
+    bidDiscountBps = Math.trunc(rawBidDiscountBps);
+    if (bidDiscountBps < 0 || bidDiscountBps > 10000) {
+      const clamped = Math.max(0, Math.min(10000, bidDiscountBps));
+      log(`Invalid bidDiscountBps (${cfg.bidDiscountBps}); clamped to ${clamped}`);
+      bidDiscountBps = clamped;
+    }
+  }
   const token = cfg.token;
   const limit = cfg.limit ?? 20;
   const dryRun = Boolean(cfg.dryRun);
