@@ -51,7 +51,7 @@ async function main() {
   const cls = await provider.getClassAt(input.contractAddress);
   if (!cls.abi) fail('Contract has no ABI on chain.');
 
-  const contract = new Contract({ abi: cls.abi, address: input.contractAddress, providerOrAccount: account });
+  const contract = new Contract({ abi: cls.abi, address: input.contractAddress, provider: account });
 
   const waitForTx = input.waitForTx !== false;
   const res = await contract.invoke(input.method, input.args || [], { waitForTransaction: waitForTx });
