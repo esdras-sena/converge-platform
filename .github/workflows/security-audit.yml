@@ -29,7 +29,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
       - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=high --json > npm-audit.json || true
       - uses: actions/upload-artifact@v4
@@ -123,7 +122,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
       - run: npm ci --ignore-scripts
       - run: npx eslint scripts/ --ext .js || true
       - run: |
@@ -140,7 +138,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
       - run: npm ci --ignore-scripts
       - env:
           CONVERGE_API_URL: http://localhost:9999
