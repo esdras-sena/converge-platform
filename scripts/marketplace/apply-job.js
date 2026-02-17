@@ -15,6 +15,15 @@
 import { helpCommon, parseHexOrDecFelt, parseU64, parseU256 } from './_marketplace.js';
 import { jsonStringifySafe, fail } from '../_lib.js';
 
+function u256ToDecimalString(v) {
+  if (!v || typeof v !== 'object' || !('low' in v) || !('high' in v)) {
+    throw new Error('Invalid u256 value');
+  }
+  const low = BigInt(v.low);
+  const high = BigInt(v.high);
+  return (low + (high << 128n)).toString();
+}
+
 function main() {
   const raw = process.argv[2];
   if (!raw) {
@@ -58,7 +67,7 @@ function main() {
       action: 'apply_job',
       accountAddress,
       jobId,
-      bidPrice: bidPrice.toString(),
+      bidPrice: u256ToDecimalString(bidPrice),
       callsForEstimate: { accountAddress, calls: [call] },
       invokePayload: {
         accountAddress,
