@@ -104,15 +104,22 @@ async function main() {
   const {
     agentAddress,
     escrowAddress,
-    interval = 30,
+    interval: rawInterval = 30,
     minMarginPct = 15,
-    maxApplications = 10,
+    maxApplications: rawMaxApplications = 10,
     bidDiscountBps = 500, // 5% under max price
     token,
     accountIndex = 0,
     dryRun = false,
     statePath = './.sb-autopilot-state.json',
   } = cfg;
+
+  let interval = Number(rawInterval);
+  if (!Number.isFinite(interval) || interval <= 0) interval = 30;
+
+  let maxApplications = Number(rawMaxApplications);
+  if (!Number.isFinite(maxApplications) || maxApplications <= 0) maxApplications = 1;
+  maxApplications = Math.floor(maxApplications);
 
   if (!agentAddress) fail('Missing agentAddress');
   if (!escrowAddress) fail('Missing escrowAddress');
