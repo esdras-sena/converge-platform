@@ -30,20 +30,28 @@ export function getSpentTodayRaw() {
 }
 
 export function canSpendMore(maxPerDayRaw, additionalRaw) {
+  const max = BigInt(maxPerDayRaw);
+  const additional = BigInt(additionalRaw);
+  if (max < 0n) throw new RangeError('maxPerDayRaw must be non-negative');
+  if (additional < 0n) throw new RangeError('additionalRaw must be non-negative');
+
   const spent = getSpentTodayRaw();
-  return spent + BigInt(additionalRaw) <= BigInt(maxPerDayRaw);
+  return spent + additional <= max;
 }
 
 export function recordSpendRaw(additionalRaw, meta = {}) {
+  const additional = BigInt(additionalRaw);
+  if (additional < 0n) throw new RangeError('additionalRaw must be non-negative');
+
   const l = loadLedger();
   const k = todayKey();
   if (!l.days) l.days = {};
   if (!l.days[k]) l.days[k] = { spentRaw: '0', items: [] };
   const prev = BigInt(l.days[k].spentRaw || '0');
-  const next = prev + BigInt(additionalRaw);
+  const next = prev + additional;
   l.days[k].spentRaw = next.toString();
   l.days[k].items = l.days[k].items || [];
-  l.days[k].items.push({ ts: Date.now(), feeRaw: String(additionalRaw), ...meta });
+  l.days[k].items.push({ ts: Date.now(), feeRaw: additional.toString(), ...meta });
   saveLedger(l);
   return next;
 }
