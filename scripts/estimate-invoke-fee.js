@@ -41,7 +41,7 @@ async function buildPopulatedCalls(provider, calls) {
       cache.set(c.contractAddress, abi);
     }
 
-    const contract = new Contract({ abi, address: c.contractAddress, provider });
+    const contract = new Contract({ abi, address: c.contractAddress, providerOrAccount: provider });
     populated.push(contract.populate(c.method, c.args || []));
   }
 
