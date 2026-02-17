@@ -1,0 +1,90 @@
+rules:
+  - id: prompt-injection-unvalidated-input
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Potential prompt injection: unvalidated user input is interpolated into prompt/message content."
+    metadata:
+      owasp: "LLM01:2025 Prompt Injection"
+    patterns:
+      - pattern-either:
+          - pattern: $P = `...${$INPUT}...`
+          - pattern: $P = "..." + $INPUT + "..."
+      - metavariable-regex:
+          metavariable: $INPUT
+          regex: (input|args|argv|cfg|config|body|query|params)
+
+  - id: prompt-injection-external-data
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Potential indirect prompt injection: external data used in prompt without validation."
+    patterns:
+      - pattern-either:
+          - pattern: |
+              const $D = readFileSync(...)
+              ...
+              $P = `...${$D}...`
+          - pattern: |
+              fetch(...).then(... => {
+                ...
+                prompt: `...${$D}...`
+              })
+
+  - id: prompt-injection-tool-calling
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Tool/function call from model output without allowlist validation."
+    patterns:
+      - pattern: |
+          if ($R.function_call) {
+            $TOOLS[$R.function_call.name]($R.function_call.arguments)
+          }
+      - pattern-not: |
+          if ($R.function_call && ALLOWED_TOOLS.includes($R.function_call.name)) {
+            ...
+          }
+
+  - id: prompt-injection-code-execution
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Critical: model/user-controlled data reaches eval/new Function/exec."
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function($X)
+          - pattern: exec($X)
+          - pattern: execSync($X)
+
+  - id: prompt-injection-delimiter-bypass
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Input may include prompt delimiters; ensure escaping/stripping before prompt assembly."
+    patterns:
+      - pattern-either:
+          - pattern: $P = `<user>${$INPUT}</user>`
+          - pattern: $P = `User: ${$INPUT}`
+
+  - id: prompt-injection-json-parse
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "JSON.parse on potentially untrusted response/input; validate schema first."
+    patterns:
+      - pattern: JSON.parse($X)
+      - pattern-not: JSON.parse(validateJSON($X))
+
+  - id: prompt-injection-system-prompt-leak
+    languages: [javascript, typescript]
+    severity: INFO
+    message: "System prompt may leak via logs/response payload."
+    patterns:
+      - pattern-either:
+          - pattern: console.log($SYSTEM_PROMPT)
+          - pattern: return { ..., system: $SYSTEM_PROMPT, ... }
+
+  - id: prompt-injection-autonomy-loop
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Autonomous loop detected; verify safeguards (budget/rate/human gate)."
+    patterns:
+      - pattern-either:
+          - pattern: while (true) { ... }
+          - pattern: for (;;) { ... }

@@ -1,0 +1,57 @@
+rules:
+  - id: security-command-injection
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Potential command injection via shell execution with dynamic input."
+    patterns:
+      - pattern-either:
+          - pattern: exec($CMD + $X)
+          - pattern: execSync($CMD + $X)
+
+  - id: security-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Avoid eval/new Function; code injection risk."
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function($X)
+
+  - id: security-path-traversal
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Potential path traversal; validate user-controlled path segments."
+    patterns:
+      - pattern-either:
+          - pattern: readFileSync(join($BASE, $P))
+          - pattern: writeFileSync(join($BASE, $P), ...)
+
+  - id: security-hardcoded-secret
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: "Potential hardcoded secret/token detected."
+    patterns:
+      - pattern-regex: (api[_-]?key|password|secret|token)\s*[:=]\s*["'][^"']{8,}["']
+
+  - id: security-weak-random
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Math.random is not cryptographically secure for IDs/tokens."
+    patterns:
+      - pattern: Math.random()
+
+  - id: security-unvalidated-argv
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "process.argv parsed without strict validation; validate schema and bounds."
+    patterns:
+      - pattern: JSON.parse(process.argv[$I])
+
+  - id: security-env-logging
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: "Potential env/secret logging."
+    patterns:
+      - pattern-either:
+          - pattern: console.log(process.env)
+          - pattern: JSON.stringify(process.env)

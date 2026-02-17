@@ -1,0 +1,163 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    - cron: '0 6 * * *'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high --json > npm-audit.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-audit-results
+          path: npm-audit.json
+
+  codeql-analysis:
+    name: CodeQL Semantic Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+          queries: security-extended,security-and-quality
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+
+  prompt-injection-scan:
+    name: Prompt Injection Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            .semgrep/prompt-injection.yml
+            .semgrep/general-security.yml
+            p/javascript
+            p/owasp-top-ten
+          generateSarif: "1"
+        env:
+          SEMGREP_SEND_METRICS: off
+        continue-on-error: true
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+      - run: node .github/scripts/detect-prompt-injection.js
+
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  input-validation-audit:
+    name: Input Validation Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - run: node .github/scripts/validate-inputs.js
+
+  lint-and-syntax:
+    name: Lint and Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx eslint scripts/ --ext .js || true
+      - run: |
+          for f in $(find scripts -name "*.js" -not -path "*/node_modules/*"); do node --check "$f"; done
+
+  behavior-analysis:
+    name: Behavior Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - env:
+          CONVERGE_API_URL: http://localhost:9999
+          STARKNET_RPC_URL: http://localhost:9999
+        run: |
+          node scripts/sb.js '{"cmd":"jobs","__proto__":{"polluted":true}}' || true
+          node scripts/sb-worker.js '{"escrowAddress":"0x123","bidDiscountBps":100000}' || true
+
+  security-report:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [dependency-scan, codeql-analysis, prompt-injection-scan, secret-scan, input-validation-audit]
+    steps:
+      - run: |
+          echo "Dependency: ${{ needs.dependency-scan.result }}"
+          echo "CodeQL: ${{ needs.codeql-analysis.result }}"
+          echo "PromptInjection: ${{ needs.prompt-injection-scan.result }}"
+          echo "SecretScan: ${{ needs.secret-scan.result }}"
+          echo "InputValidation: ${{ needs.input-validation-audit.result }}"
