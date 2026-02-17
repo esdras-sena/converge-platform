@@ -1,0 +1,140 @@
+# General Security Rules for JavaScript/Node.js
+# Covers common vulnerabilities beyond prompt injection
+
+rules:
+  # ─────────────────────────────────────────────────────────────
+  # Input Validation
+  # ─────────────────────────────────────────────────────────────
+  - id: security-unvalidated-process-argv
+    languages:
+      - javascript
+    message: |
+      process.argv is used directly without validation. Validate all CLI inputs.
+    severity: WARNING
+    patterns:
+      - pattern: JSON.parse(process.argv[$N])
+      - pattern: eval(process.argv[$N])
+
+  - id: security-dangerous-eval
+    languages:
+      - javascript
+    message: |
+      eval() is dangerous and should be avoided. Use safer alternatives.
+    severity: ERROR
+    patterns:
+      - pattern: eval($X)
+
+  # ─────────────────────────────────────────────────────────────
+  # File System Security
+  # ─────────────────────────────────────────────────────────────
+  - id: security-path-traversal
+    languages:
+      - javascript
+    message: |
+      Potential path traversal: User input used in file path construction.
+      Validate and sanitize paths using path.normalize and ensure they stay within bounds.
+    severity: ERROR
+    patterns:
+      - pattern: readFileSync($PATH)
+      - pattern: writeFileSync($PATH, ...)
+      - pattern: join($BASE, $USER_INPUT)
+      - metavariable-regex:
+          metavariable: $USER_INPUT
+          regex: (input|userInput|filename|path|dir)
+
+  - id: security-insecure-temp-file
+    languages:
+      - javascript
+    message: |
+      Insecure temporary file creation. Use mkdtemp or proper atomic operations.
+    severity: WARNING
+    patterns:
+      - pattern: writeFileSync(`/tmp/${$RANDOM}`)
+      - pattern: writeFileSync(`${os.tmpdir()}/${Date.now()}`)
+
+  # ─────────────────────────────────────────────────────────────
+  # Cryptographic Issues
+  # ─────────────────────────────────────────────────────────────
+  - id: security-weak-randomness
+    languages:
+      - javascript
+    message: |
+      Math.random() is not cryptographically secure. Use crypto.randomBytes for tokens/IDs.
+    severity: WARNING
+    patterns:
+      - pattern: Math.random()
+      - pattern: Math.random().toString(16)
+
+  # ─────────────────────────────────────────────────────────────
+  # Network Security
+  # ─────────────────────────────────────────────────────────────
+  - id: security-unvalidated-fetch
+    languages:
+      - javascript
+    message: |
+      fetch() URL may be user-controlled. Validate URLs against an allowlist.
+    severity: WARNING
+    patterns:
+      - pattern: fetch($URL)
+      - pattern: fetch(new URL($PATH, $BASE))
+      - metavariable-regex:
+          metavariable: $URL
+          regex: (url|endpoint|target|apiUrl)
+
+  # ─────────────────────────────────────────────────────────────
+  # Secret Management
+  # ─────────────────────────────────────────────────────────────
+  - id: security-hardcoded-secret
+    languages:
+      - javascript
+    message: |
+      Potential hardcoded secret detected. Use environment variables or secret managers.
+    severity: ERROR
+    patterns:
+      - pattern-regex: (api[_-]?key|password|secret|token)\s*[:=]\s*["'][^"']{8,}["']
+      - pattern-regex: (sk-|pk-|ghp_|glpat-|npm_)[a-zA-Z0-9]{10,}
+
+  - id: security-env-in-log
+    languages:
+      - javascript
+    message: |
+      process.env may be logged. Ensure secrets are not exposed in logs.
+    severity: WARNING
+    patterns:
+      - pattern: console.log(...process.env)
+      - pattern: console.log(process.env[$SECRET])
+      - pattern: JSON.stringify(process.env)
+
+  # ─────────────────────────────────────────────────────────────
+  # Injection Vulnerabilities
+  # ─────────────────────────────────────────────────────────────
+  - id: security-command-injection
+    languages:
+      - javascript
+    message: |
+      Potential command injection: User input in shell command.
+    severity: ERROR
+    patterns:
+      - pattern: exec($CMD + $INPUT)
+      - pattern: execSync($CMD + $INPUT)
+      - pattern: spawn($CMD, [$INPUT])
+      - metavariable-regex:
+          metavariable: $INPUT
+          regex: (input|userInput|arg|param)
+
+  # ─────────────────────────────────────────────────────────────
+  # Prototype Pollution
+  # ─────────────────────────────────────────────────────────────
+  - id: security-prototype-pollution
+    languages:
+      - javascript
+    message: |
+      Potential prototype pollution: Merging user input into objects unsafely.
+    severity: WARNING
+    patterns:
+      - pattern: Object.assign($TARGET, $USER_INPUT)
+      - pattern: { ...$TARGET, ...$USER_INPUT }
+      - pattern: $OBJ[$KEY] = $VAL
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: (key|prop|property|__proto__|constructor)

@@ -1,0 +1,253 @@
+# Custom Semgrep Rules for Prompt Injection Detection
+# Target: AI Agent / LLM-powered applications
+# Based on OWASP LLM01:2025 and common attack patterns
+
+rules:
+  # ─────────────────────────────────────────────────────────────
+  # RULE 1: Direct User Input to LLM Prompt
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-unvalidated-input
+    languages:
+      - javascript
+      - typescript
+    message: |
+      Potential prompt injection: User input is directly interpolated into an LLM prompt.
+      Validate and sanitize all user inputs before including them in prompts.
+      Use allowlists, input length limits, and context-aware filtering.
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-94: Improper Control of Generation of Code ('Code Injection')"
+      owasp: "LLM01:2025 Prompt Injection"
+      references:
+        - https://genai.owasp.org/llmrisk/llm01-prompt-injection/
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $PROMPT = `...${$USER_INPUT}...`
+          - pattern: |
+              $PROMPT = "..." + $USER_INPUT + "..."
+          - pattern: |
+              $PROMPT = [...$USER_INPUT, ...]
+      - metavariable-regex:
+          metavariable: $USER_INPUT
+          regex: (input|args|argv|body|query|params|data)
+    fix: |
+      // Validate input before use
+      const sanitized = validateInput($USER_INPUT);
+      const $PROMPT = `...${sanitized}...`;
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 2: Dynamic System Prompt Construction
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-dynamic-system-prompt
+    languages:
+      - javascript
+      - typescript
+    message: |
+      Dynamic system prompt construction detected. System prompts should be static templates.
+      If dynamic content is required, strictly validate against an allowlist of safe values.
+    severity: WARNING
+    metadata:
+      category: security
+      owasp: "LLM01:2025 Prompt Injection"
+    patterns:
+      - pattern-either:
+          - pattern: |
+              const systemPrompt = `You are ${$VAR}...`
+          - pattern: |
+              systemPrompt += $VAR
+          - pattern: |
+              { role: "system", content: $VAR }
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (config|options|settings|user|input)
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 3: Indirect Prompt Injection via External Data
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-external-data
+    languages:
+      - javascript
+      - typescript
+    message: |
+      External data (files, DB, API responses) is being included in prompts without validation.
+      This enables indirect prompt injection attacks where malicious content poisons data sources.
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-74: Improper Neutralization of Special Elements"
+    patterns:
+      - pattern-either:
+          - pattern: |
+              fs.readFileSync(...).then($DATA => {
+                $PROMPT = `...${$DATA}...`
+              })
+          - pattern: |
+              const $DATA = readFileSync(...)
+              ...
+              $PROMPT = `...${$DATA}...`
+          - pattern: |
+              fetch(...).then(r => r.text()).then($DATA => {
+                ...
+                prompt: `...${$DATA}...`
+              })
+          - pattern: |
+              JSON.parse($FILE_CONTENT)
+              ...
+              $PROMPT = `...${$PROP}...`
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 4: Missing Input Validation Functions
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-missing-validation
+    languages:
+      - javascript
+      - typescript
+    message: |
+      User input is used without visible validation. Ensure all inputs are validated:
+      - Type checking (string, number, etc.)
+      - Length limits
+      - Character allowlists
+      - Semantic validation
+    severity: WARNING
+    patterns:
+      - pattern: |
+          function $FUNC($INPUT, ...) {
+            ...
+            $LLM_CALL($INPUT)
+          }
+      - pattern-not: |
+          function $FUNC($INPUT, ...) {
+            ...
+            if (!validate(...)) throw ...
+            ...
+            $LLM_CALL($INPUT)
+          }
+      - metavariable-regex:
+          metavariable: $INPUT
+          regex: (input|prompt|message|content|text|query)
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 5: Dangerous Function Call from LLM Output
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-code-execution
+    languages:
+      - javascript
+      - typescript
+    message: |
+      CRITICAL: LLM output is being passed to eval(), new Function(), or similar.
+      This is a severe code injection vulnerability. Never execute LLM-generated code.
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-95: Eval Injection"
+    patterns:
+      - pattern-either:
+          - pattern: eval($LLM_OUTPUT)
+          - pattern: new Function($LLM_OUTPUT)
+          - pattern: setTimeout($LLM_OUTPUT, ...)
+          - pattern: setInterval($LLM_OUTPUT, ...)
+          - pattern: exec($LLM_OUTPUT)
+          - pattern: spawn($LLM_OUTPUT)
+      - metavariable-regex:
+          metavariable: $LLM_OUTPUT
+          regex: (response|output|result|content|text|answer)
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 6: Prompt Delimiter Injection
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-delimiter-bypass
+    languages:
+      - javascript
+      - typescript
+    message: |
+      User input may contain prompt delimiters (```, <system>, <user>, etc.) that could
+      escape context boundaries. Strip or escape these sequences before prompt construction.
+    severity: WARNING
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $PROMPT = `User: ${$INPUT}`
+          - pattern: |
+              $PROMPT = `<user>${$INPUT}</user>`
+      - metavariable-regex:
+          metavariable: $INPUT
+          regex: (userInput|input|message|content)
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 7: Insecure Deserialization of LLM Responses
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-json-parse
+    languages:
+      - javascript
+      - typescript
+    message: |
+      JSON.parse() on LLM output without validation. Malicious responses can contain
+      prototype pollution or unexpected structures. Validate schema before parsing.
+    severity: WARNING
+    patterns:
+      - pattern: JSON.parse($LLM_RESPONSE)
+      - pattern-not: JSON.parse(validateJSON($LLM_RESPONSE))
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 8: Tool/Function Calling Without Validation
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-tool-calling
+    languages:
+      - javascript
+      - typescript
+    message: |
+      Function/tool calls from LLM responses are executed without parameter validation.
+      Validate all tool names against an allowlist and sanitize all parameters.
+    severity: ERROR
+    patterns:
+      - pattern: |
+          if ($RESPONSE.function_call) {
+            $TOOL[$RESPONSE.function_call.name]($RESPONSE.function_call.arguments)
+          }
+      - pattern-not: |
+          if ($RESPONSE.function_call && ALLOWED_TOOLS.includes($RESPONSE.function_call.name)) {
+            ...
+          }
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 9: System Prompt Leakage Risk
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-system-leakage
+    languages:
+      - javascript
+      - typescript
+    message: |
+      Code pattern suggests potential system prompt exposure. Ensure system prompts
+      are not returned to users or logged inappropriately.
+    severity: INFO
+    patterns:
+      - pattern-either:
+          - pattern: return systemPrompt
+          - pattern: console.log(systemPrompt)
+          - pattern: JSON.stringify({..., system: $SYS_PROMPT, ...})
+          - pattern: |
+              res.json({ ..., prompt: $SYSTEM_PROMPT, ... })
+
+  # ─────────────────────────────────────────────────────────────
+  # RULE 10: Agent Autonomy Without Safety Guards
+  # ─────────────────────────────────────────────────────────────
+  - id: prompt-injection-autonomy-risk
+    languages:
+      - javascript
+      - typescript
+    message: |
+      Autonomous agent loop detected without visible safety constraints.
+      Ensure: max iterations, budget limits, human-in-the-loop for critical actions,
+      and output validation before tool execution.
+    severity: WARNING
+    patterns:
+      - pattern: while (true) { ... $LLM_CALL ... }
+      - pattern: for (;;) { ... $LLM_CALL ... }
+      - pattern: |
+          setInterval(() => {
+            ...
+            $LLM_CALL(...)
+            ...
+          }, $INTERVAL)

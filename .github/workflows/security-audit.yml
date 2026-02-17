@@ -1,0 +1,361 @@
+# Comprehensive Security CI/CD Workflow for Converge Platform
+# Focus: Prompt Injection Vulnerabilities & General Bug Detection
+# Safety: Read-only, no secrets in logs, minimal permissions
+
+name: Security Audit
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: '0 6 * * *'
+
+# Security: Minimal permissions principle
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+# Concurrency: Cancel redundant runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # JOB 1: Dependency & Supply Chain Security
+  # ─────────────────────────────────────────────────────────────
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+        # Security: ignore-scripts prevents post-install exploits
+
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level=high --json > npm-audit.json || true
+          cat npm-audit.json | jq -r '.advisories | to_entries[] | "\(.value.severity): \(.value.module_name) - \(.value.title)"' || echo "No high-severity issues found"
+        continue-on-error: true
+
+      - name: Check for outdated dependencies
+        run: npm outdated || true
+        continue-on-error: true
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: npm-audit-results
+          path: npm-audit.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 2: Static Analysis - CodeQL (Semantic Analysis)
+  # ─────────────────────────────────────────────────────────────
+  codeql-analysis:
+    name: CodeQL Semantic Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+          queries: security-extended,security-and-quality
+          config: |
+            paths-ignore:
+              - '**/node_modules/**'
+              - '**/dist/**'
+              - '**/*.test.js'
+              - '**/*.spec.js'
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript"
+          output: codeql-results
+          upload: true
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 3: Prompt Injection Detection (Semgrep + Custom Rules)
+  # ─────────────────────────────────────────────────────────────
+  prompt-injection-scan:
+    name: Prompt Injection Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run Semgrep with custom rules
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            .semgrep/prompt-injection.yml
+            .semgrep/general-security.yml
+            p/javascript
+            p/owasp-top-ten
+          generateSarif: "1"
+          auditOn: push
+        env:
+          SEMGREP_SEND_METRICS: off
+        continue-on-error: true
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Run custom prompt injection script
+        run: |
+          node .github/scripts/detect-prompt-injection.js
+        continue-on-error: false
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 4: Secret & Credential Scanning
+  # ─────────────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for truffleHog to scan history
+          persist-credentials: false
+
+      - name: Secret detection with TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+      - name: Gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 5: Input Validation & Sanitization Audit
+  # ─────────────────────────────────────────────────────────────
+  input-validation-audit:
+    name: Input Validation Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Detect unsafe input patterns
+        run: |
+          echo "=== Scanning for unsafe input patterns ==="
+          
+          # Patterns that indicate potential prompt injection vectors
+          echo "Checking for unvalidated user input in prompts..."
+          grep -rn "JSON.parse.*process.argv" scripts/ || true
+          grep -rn "process\.env\[" scripts/ | grep -v "STARKNET\|ESCROW\|API\|RPC" || true
+          
+          echo "Checking for eval-like patterns..."
+          grep -rn "eval(" scripts/ || echo "No eval() found"
+          grep -rn "new Function(" scripts/ || echo "No new Function() found"
+          
+          echo "Checking for dynamic require..."
+          grep -rn "require(.*process" scripts/ || true
+          grep -rn "require(.*config" scripts/ || true
+          
+          echo "=== Validation checks complete ==="
+        shell: bash
+
+      - name: Check for missing input validation
+        run: |
+          node .github/scripts/validate-inputs.js
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 6: Lint & Basic Bug Detection
+  # ─────────────────────────────────────────────────────────────
+  lint-and-typecheck:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run ESLint
+        run: |
+          npx eslint scripts/ --ext .js --format json --output-file eslint-report.json || true
+          cat eslint-report.json | jq '.[] | select(.errorCount > 0 or .warningCount > 0) | .filePath' | head -20
+        continue-on-error: true
+
+      - name: Run Prettier check
+        run: npx prettier --check "scripts/**/*.js" || true
+        continue-on-error: true
+
+      - name: Node syntax check
+        run: |
+          for f in $(find scripts -name "*.js" -not -path "*/node_modules/*"); do
+            node --check "$f" 2>&1 || echo "Syntax error in $f"
+          done
+        shell: bash
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 7: Behavior Analysis (Safe Dynamic Checks)
+  # ─────────────────────────────────────────────────────────────
+  behavior-analysis:
+    name: Runtime Behavior Analysis
+    runs-on: ubuntu-latestn    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Test script execution without network
+        env:
+          CONVERGE_API_URL: "http://localhost:9999"  # Invalid URL to prevent real calls
+          STARKNET_RPC_URL: "http://localhost:9999"
+        run: |
+          echo "=== Testing script argument parsing safety ==="
+          # Test with malicious input patterns
+          node scripts/sb.js '{"cmd":"jobs","__proto__":{"polluted":true}}' 2>&1 | head -5 || true
+          node scripts/sb-worker.js '{"escrowAddress":"0x123","bidDiscountBps":100000}' 2>&1 | head -5 || true
+          echo "=== Test complete ==="
+        continue-on-error: true
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 8: Supply Chain Security (Lockfile Integrity)
+  # ─────────────────────────────────────────────────────────────
+  lockfile-integrity:
+    name: Lockfile Integrity Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify lockfile
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --package-lock-only
+            git diff --exit-code package-lock.json || echo "Lockfile out of sync"
+          elif [ -f yarn.lock ]; then
+            echo "Yarn lockfile detected - ensure integrity"
+          elif [ -f pnpm-lock.yaml ]; then
+            echo "pnpm lockfile detected - ensure integrity"
+          else
+            echo "Warning: No lockfile found"
+          fi
+        shell: bash
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 9: Report Aggregation
+  # ─────────────────────────────────────────────────────────────
+  security-report:
+    name: Aggregate Security Report
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, codeql-analysis, prompt-injection-scan, secret-scan, input-validation-audit]
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+
+      - name: Generate security summary
+        run: |
+          echo "# Security Audit Summary" > security-summary.md
+          echo "" >> security-summary.md
+          echo "| Job | Status |" >> security-summary.md
+          echo "|-----|--------|" >> security-summary.md
+          echo "| Dependency Scan | ${{ needs.dependency-scan.result }} |" >> security-summary.md
+          echo "| CodeQL Analysis | ${{ needs.codeql-analysis.result }} |" >> security-summary.md
+          echo "| Prompt Injection Scan | ${{ needs.prompt-injection-scan.result }} |" >> security-summary.md
+          echo "| Secret Scan | ${{ needs.secret-scan.result }} |" >> security-summary.md
+          echo "| Input Validation | ${{ needs.input-validation-audit.result }} |" >> security-summary.md
+          cat security-summary.md
+
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: security-summary.md
+          retention-days: 90
