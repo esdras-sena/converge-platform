@@ -30,8 +30,18 @@ jobs:
         with:
           node-version: '20'
           package-manager-cache: false
-      - run: npm ci --ignore-scripts
-      - run: npm audit --audit-level=high --json > npm-audit.json || true
+      - run: |
+          if [ -f package.json ] && [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            echo "Skipping npm ci (no package-lock.json/package.json)"
+          fi
+      - run: |
+          if [ -f package.json ] && [ -f package-lock.json ]; then
+            npm audit --audit-level=high --json > npm-audit.json || true
+          else
+            echo '{}' > npm-audit.json
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -124,8 +134,18 @@ jobs:
         with:
           node-version: '20'
           package-manager-cache: false
-      - run: npm ci --ignore-scripts
-      - run: npx eslint scripts/ --ext .js || true
+      - run: |
+          if [ -f package.json ] && [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            echo "Skipping npm ci (no package-lock.json/package.json)"
+          fi
+      - run: |
+          if [ -f package.json ]; then
+            npx eslint scripts/ --ext .js || true
+          else
+            echo "Skipping eslint (no package.json)"
+          fi
       - run: |
           for f in $(find scripts -name "*.js" -not -path "*/node_modules/*"); do node --check "$f"; done
 
@@ -141,7 +161,6 @@ jobs:
         with:
           node-version: '20'
           package-manager-cache: false
-      - run: npm ci --ignore-scripts
       - env:
           CONVERGE_API_URL: http://localhost:9999
           STARKNET_RPC_URL: http://localhost:9999
