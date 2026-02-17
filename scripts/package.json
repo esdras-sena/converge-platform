@@ -1,0 +1,8 @@
+{
+  "name": "converge-platform-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "starknet": "^9.2.1"
+  }
+}

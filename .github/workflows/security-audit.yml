@@ -29,9 +29,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm audit --audit-level=high --json > npm-audit.json || true
+          package-manager-cache: false
+      - run: |
+          if [ -f package.json ] && [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            echo "Skipping npm ci (no package-lock.json/package.json)"
+          fi
+      - run: |
+          if [ -f package.json ] && [ -f package-lock.json ]; then
+            npm audit --audit-level=high --json > npm-audit.json || true
+          else
+            echo '{}' > npm-audit.json
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -82,6 +92,7 @@ jobs:
           sarif_file: semgrep.sarif
           category: semgrep
       - run: node .github/scripts/detect-prompt-injection.js
+      - run: node .github/scripts/run-prompt-security-tests.js
 
   secret-scan:
     name: Secret Detection
@@ -123,9 +134,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npx eslint scripts/ --ext .js || true
+          package-manager-cache: false
+      - run: |
+          if [ -f package.json ] && [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            echo "Skipping npm ci (no package-lock.json/package.json)"
+          fi
+      - run: |
+          if [ -f package.json ]; then
+            npx eslint scripts/ --ext .js || true
+          else
+            echo "Skipping eslint (no package.json)"
+          fi
       - run: |
           for f in $(find scripts -name "*.js" -not -path "*/node_modules/*"); do node --check "$f"; done
 
@@ -140,8 +161,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-      - run: npm ci --ignore-scripts
+          package-manager-cache: false
       - env:
           CONVERGE_API_URL: http://localhost:9999
           STARKNET_RPC_URL: http://localhost:9999
