@@ -69,8 +69,19 @@ function saveState(p, s) {
 }
 
 function bpsMul(x, bps) {
+  const xBig = BigInt(x);
+  const bpsNum = Number(bps);
+
+  if (!Number.isFinite(bpsNum) || !Number.isInteger(bpsNum)) {
+    throw new RangeError('bidDiscountBps must be a finite integer');
+  }
+  if (bpsNum < 0 || bpsNum > 10000) {
+    throw new RangeError('bidDiscountBps must be between 0 and 10000');
+  }
+
+  const bpsBig = BigInt(bpsNum);
   // x * (10000 - bps) / 10000
-  return (x * BigInt(10000 - bps)) / 10000n;
+  return (xBig * (10000n - bpsBig)) / 10000n;
 }
 
 function runNode(scriptPath, jsonArg) {
